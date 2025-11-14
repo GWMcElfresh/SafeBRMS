@@ -1,0 +1,250 @@
+---
+title: "SafeBRMS: Safe Bayesian Regression with E-Values"
+author: "SafeBRMS Contributors"
+date: "`r Sys.Date()`"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{SafeBRMS: Safe Bayesian Regression with E-Values}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  collapse = TRUE,
+  comment = "#>",
+  eval = FALSE
+)
+```
+
+## Introduction
+
+The SafeBRMS package provides tools for safe Bayesian regression model selection using e-values. It combines the flexibility of brms for Bayesian modeling with rigorous safe testing procedures based on the Turner/Ly/Grunwald e-variable construction.
+
+### Key Features
+
+- Fit Bayesian regression models using brms
+- Compute e-values for hypothesis testing with type-I error guarantees
+- Build per-observation exponential-family GLM likelihood ratio e-variables
+- Mix e-values to ensure E ≤ 1 under the null hypothesis
+- Compute e-posteriors over parameter grids
+- Perform single and multiple coefficient tests
+- Control false discovery rate using Benjamini-Hochberg correction
+
+## Installation
+
+```{r install, eval=FALSE}
+# Install from GitHub (when available)
+# devtools::install_github("GWMcElfresh/SafeBRMS")
+
+# Load the package
+library(SafeBRMS)
+```
+
+## Basic Workflow
+
+### 1. Load Example Data
+
+The package includes a simulated dataset with 100 observations and 4 variables:
+
+```{r load-data}
+library(SafeBRMS)
+data(example_data)
+head(example_data)
+```
+
+The data was generated with:
+- `y = 0.5 * x1 + 0.3 * x2 + ε`
+- `x1, x2, x3 ~ N(0, 1)`
+- `ε ~ N(0, 1)`
+
+Thus, `x1` and `x2` have true effects while `x3` has no effect.
+
+### 2. Fit a Bayesian Regression Model
+
+```{r fit-model}
+# Fit model using brms through SafeBRMS wrapper
+fit <- fit_safe_brms(
+  formula = y ~ x1 + x2 + x3,
+  data = example_data,
+  chains = 2,       # Use 2 chains for faster demo
+  iter = 1000,      # 1000 iterations
+  warmup = 500      # 500 warmup iterations
+)
+
+# View model summary
+summary(fit)
+```
+
+### 3. Single Coefficient Test
+
+Test whether a single coefficient is equal to zero:
+
+```{r single-test}
+# Test if x1 coefficient is zero
+result_x1 <- single_coef_test(fit, coef_name = "x1", null_value = 0)
+print(result_x1)
+
+# Test if x3 coefficient is zero
+result_x3 <- single_coef_test(fit, coef_name = "x3", null_value = 0)
+print(result_x3)
+```
+
+The e-value provides evidence against the null hypothesis. Larger e-values indicate stronger evidence. At significance level α = 0.05, we reject the null when e-value > 1/α = 20.
+
+### 4. Multiple Testing with Benjamini-Hochberg Correction
+
+When testing multiple coefficients, use FDR control:
+
+```{r multiple-test}
+# Test all coefficients simultaneously
+results <- multiple_testing_bh(
+  fit = fit,
+  null_value = 0,
+  fdr_level = 0.05
+)
+
+print(results)
+```
+
+The Benjamini-Hochberg procedure controls the false discovery rate across all tests. Coefficients with `reject = TRUE` are significantly different from zero after FDR correction.
+
+### 5. Compute E-Posterior
+
+Examine the e-posterior distribution for a coefficient:
+
+```{r eposterior}
+# Compute e-posterior for x1
+epost <- compute_eposterior(fit, coef_name = "x1")
+
+# Plot the e-posterior
+plot(epost$theta, epost$eposterior, type = "l",
+     xlab = "Theta", ylab = "E-Posterior Density",
+     main = "E-Posterior for x1 Coefficient")
+abline(v = epost$MAP_theta, col = "red", lty = 2)
+legend("topright", legend = c("E-Posterior", "MAP Estimate"),
+       col = c("black", "red"), lty = c(1, 2))
+```
+
+The e-posterior provides a safe alternative to traditional Bayesian posteriors that maintains calibration even under model misspecification.
+
+## Advanced Usage
+
+### GLM Likelihood Ratio E-Values
+
+Compute per-observation e-values directly:
+
+```{r glm-evalues}
+# Prepare data
+y <- example_data$y
+X <- model.matrix(~ x1 + x2 + x3, data = example_data)
+
+# Compute e-values for testing second coefficient
+evalues <- glm_lr_evalues(
+  y = y,
+  X = X,
+  theta_null = 0,
+  theta_alt = 0.5,
+  family = gaussian()
+)
+
+# View distribution of e-values
+summary(evalues)
+hist(evalues, breaks = 20, main = "Distribution of E-Values")
+```
+
+### Mixing E-Values
+
+Apply mixing to ensure E ≤ 1 under the null:
+
+```{r mix-evalues}
+# Mix the e-values
+mixed <- mix_evalues(evalues, alpha_mix = 0.5, beta_mix = 0.5)
+
+# Compare original and mixed
+par(mfrow = c(1, 2))
+hist(evalues, breaks = 20, main = "Original E-Values")
+hist(mixed, breaks = 20, main = "Mixed E-Values")
+```
+
+## Reproducibility
+
+All analyses in this vignette are fully reproducible:
+
+```{r reproducibility}
+# Set seed for reproducibility
+set.seed(123)
+
+# Generate new data with same structure
+n <- 100
+x1 <- rnorm(n)
+x2 <- rnorm(n)
+x3 <- rnorm(n)
+y <- 0.5 * x1 + 0.3 * x2 + rnorm(n)
+new_data <- data.frame(y = y, x1 = x1, x2 = x2, x3 = x3)
+
+# Fit model
+new_fit <- fit_safe_brms(y ~ x1 + x2 + x3, data = new_data,
+                         chains = 2, iter = 1000, warmup = 500)
+
+# Test coefficients
+new_results <- multiple_testing_bh(new_fit, fdr_level = 0.05)
+print(new_results)
+```
+
+## Theory and Background
+
+### E-Values
+
+E-values (evidence values) are alternatives to p-values that provide several advantages:
+
+1. **Type-I error guarantees**: E[e] ≤ 1 under the null hypothesis
+2. **Product property**: Can multiply e-values for multiple tests while maintaining validity
+3. **Optional stopping**: Valid for sequential testing and optional stopping
+4. **Model robustness**: Remain valid under model misspecification
+
+### E-Posterior
+
+The e-posterior is computed using the betting interpretation of probability. It combines the likelihood with a safe prior to produce a distribution that:
+
+- Maintains calibration under misspecification
+- Provides coherent sequential inference
+- Can be interpreted as a wealth process
+
+### Turner/Ly/Grunwald Construction
+
+The package implements the construction from:
+
+- Turner, D., Ly, A., & Grünwald, P. (2020+). Safe testing and e-values.
+
+This framework provides rigorous foundations for safe hypothesis testing in Bayesian settings.
+
+## Comparison with Traditional Methods
+
+### Advantages of E-Values over P-Values
+
+1. **Sequential validity**: E-values remain valid under optional stopping
+2. **Multiplicative combination**: Can multiply e-values from independent tests
+3. **Safe interpretation**: E-value > 1/α provides evidence against null at level α
+4. **Robustness**: Less sensitive to model misspecification
+
+### When to Use SafeBRMS
+
+Consider using SafeBRMS when:
+
+- You want rigorous type-I error control in Bayesian settings
+- Sequential or adaptive testing is needed
+- Multiple testing with product combinations is desired
+- Robustness to model misspecification is important
+
+## References
+
+- Grünwald, P., de Heide, R., & Koolen, W. (2019). Safe testing. arXiv preprint.
+- Turner, D., Ly, A., & Grünwald, P. (2020+). Safe testing and e-values in regression.
+- Bürkner, P. C. (2017). brms: An R package for Bayesian multilevel models using Stan.
+
+## Session Info
+
+```{r session-info}
+sessionInfo()
+```
