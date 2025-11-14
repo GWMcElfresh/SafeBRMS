@@ -8,7 +8,11 @@
 #' @param theta_null Parameter value under the null hypothesis.
 #' @param theta_alt Parameter value under the alternative hypothesis.
 #' @param family Family object specifying the exponential family distribution.
-#'   Default is gaussian().
+#'   Default is gaussian(). Supported families: gaussian, poisson, binomial,
+#'   Gamma, and negative.binomial (requires size parameter).
+#' @param dispersion Dispersion parameter. For negative binomial, this is the
+#'   size parameter (theta). For Gamma, this is the shape parameter. If NULL,
+#'   estimated from data where appropriate.
 #'
 #' @return A numeric vector of per-observation e-values.
 #'
@@ -19,47 +23,172 @@
 #' These e-values form a test martingale under the null hypothesis, meaning
 #' their expected value is at most 1.
 #'
+#' Supported families:
+#' \itemize{
+#'   \item \strong{gaussian}: Normal distribution for continuous responses
+#'   \item \strong{poisson}: Poisson distribution for count data
+#'   \item \strong{binomial}: Binomial distribution for binary/proportion data
+#'   \item \strong{Gamma}: Gamma distribution for positive continuous data
+#'   \item \strong{negative.binomial}: Negative binomial for overdispersed counts
+#' }
+#'
 #' @examples
-#' # Simple linear model
+#' # Gaussian (continuous data)
 #' set.seed(123)
 #' n <- 50
 #' x <- rnorm(n)
 #' y <- 0.3 * x + rnorm(n)
 #' X <- cbind(1, x)
-#' 
-#' # Compute e-values for testing beta = 0 vs beta = 0.5
-#' evalues <- glm_lr_evalues(y, X, theta_null = 0, theta_alt = 0.5)
+#' evalues_gauss <- glm_lr_evalues(y, X, theta_null = 0, theta_alt = 0.5)
+#'
+#' # Poisson (count data)
+#' y_count <- rpois(n, lambda = exp(0.5 * x))
+#' evalues_pois <- glm_lr_evalues(y_count, X, theta_null = 0, theta_alt = 0.5,
+#'                                 family = poisson())
+#'
+#' # Binomial (binary data)
+#' y_binary <- rbinom(n, size = 1, prob = plogis(0.5 * x))
+#' evalues_binom <- glm_lr_evalues(y_binary, X, theta_null = 0, theta_alt = 0.5,
+#'                                  family = binomial())
 #'
 #' @export
-#' @importFrom stats dnorm
-glm_lr_evalues <- function(y, X, theta_null, theta_alt, family = gaussian()) {
+#' @importFrom stats dnorm dpois dbinom dgamma
+glm_lr_evalues <- function(y, X, theta_null, theta_alt, family = gaussian(), 
+                           dispersion = NULL) {
   
   n <- length(y)
   
-  # For Gaussian family with known variance (simplified)
-  if (inherits(family, "family") && family$family == "gaussian") {
-    # Compute fitted values under null and alternative
-    if (is.matrix(X)) {
-      # Assuming theta refers to a specific coefficient
-      # For simplicity, we'll compute log-likelihood ratios
-      sigma_sq <- var(y)  # Estimate variance from data
+  if (!is.matrix(X)) {
+    stop("X must be a matrix")
+  }
+  
+  # Extract family name
+  family_name <- if (inherits(family, "family")) {
+    family$family
+  } else if (is.character(family)) {
+    family
+  } else {
+    stop("family must be a family object or character string")
+  }
+  
+  # Initialize e-values vector
+  evalues <- numeric(n)
+  
+  # Gaussian family
+  if (family_name == "gaussian") {
+    # Estimate variance from data if not provided
+    sigma_sq <- if (is.null(dispersion)) var(y) else dispersion^2
+    
+    for (i in 1:n) {
+      # Linear predictor
+      mu_alt <- theta_alt * X[i, 2]
+      mu_null <- theta_null * X[i, 2]
       
-      # Compute likelihood ratio for each observation
-      # This is a simplified version - full implementation would be more complex
-      evalues <- numeric(n)
-      for (i in 1:n) {
-        # Likelihood under alternative
-        ll_alt <- dnorm(y[i], mean = theta_alt * X[i, 2], sd = sqrt(sigma_sq), log = TRUE)
-        # Likelihood under null
-        ll_null <- dnorm(y[i], mean = theta_null * X[i, 2], sd = sqrt(sigma_sq), log = TRUE)
-        # E-value is exp(log-likelihood ratio)
-        evalues[i] <- exp(ll_alt - ll_null)
+      # Log-likelihood ratio
+      ll_alt <- dnorm(y[i], mean = mu_alt, sd = sqrt(sigma_sq), log = TRUE)
+      ll_null <- dnorm(y[i], mean = mu_null, sd = sqrt(sigma_sq), log = TRUE)
+      
+      evalues[i] <- exp(ll_alt - ll_null)
+    }
+    
+  # Poisson family
+  } else if (family_name == "poisson") {
+    for (i in 1:n) {
+      # Linear predictor on log scale
+      lambda_alt <- exp(theta_alt * X[i, 2])
+      lambda_null <- exp(theta_null * X[i, 2])
+      
+      # Log-likelihood ratio
+      ll_alt <- dpois(y[i], lambda = lambda_alt, log = TRUE)
+      ll_null <- dpois(y[i], lambda = lambda_null, log = TRUE)
+      
+      evalues[i] <- exp(ll_alt - ll_null)
+    }
+    
+  # Binomial family
+  } else if (family_name == "binomial") {
+    # Assume y is 0/1 (size = 1) unless otherwise specified
+    size <- if (!is.null(attr(y, "size"))) attr(y, "size") else 1
+    
+    for (i in 1:n) {
+      # Linear predictor on logit scale
+      p_alt <- plogis(theta_alt * X[i, 2])
+      p_null <- plogis(theta_null * X[i, 2])
+      
+      # Log-likelihood ratio
+      ll_alt <- dbinom(y[i], size = size, prob = p_alt, log = TRUE)
+      ll_null <- dbinom(y[i], size = size, prob = p_null, log = TRUE)
+      
+      evalues[i] <- exp(ll_alt - ll_null)
+    }
+    
+  # Gamma family
+  } else if (family_name == "Gamma") {
+    # Estimate shape parameter if not provided
+    # Using method of moments: shape = mean^2 / variance
+    if (is.null(dispersion)) {
+      shape <- mean(y)^2 / var(y)
+    } else {
+      shape <- dispersion
+    }
+    
+    for (i in 1:n) {
+      # Linear predictor on log scale
+      mu_alt <- exp(theta_alt * X[i, 2])
+      mu_null <- exp(theta_null * X[i, 2])
+      
+      # Rate parameter: rate = shape / mean
+      rate_alt <- shape / mu_alt
+      rate_null <- shape / mu_null
+      
+      # Log-likelihood ratio
+      ll_alt <- dgamma(y[i], shape = shape, rate = rate_alt, log = TRUE)
+      ll_null <- dgamma(y[i], shape = shape, rate = rate_null, log = TRUE)
+      
+      evalues[i] <- exp(ll_alt - ll_null)
+    }
+    
+  # Negative Binomial family
+  } else if (family_name %in% c("negative.binomial", "negbin", "nb")) {
+    # Requires size (dispersion) parameter
+    if (is.null(dispersion)) {
+      # Estimate size using method of moments
+      # Var(Y) = mu + mu^2/size, so size = mu^2 / (Var - mu)
+      mu_est <- mean(y)
+      var_est <- var(y)
+      size <- mu_est^2 / (var_est - mu_est)
+      if (size <= 0) {
+        warning("Estimated negative binomial size parameter is non-positive. Using size = 1.")
+        size <- 1
       }
     } else {
-      stop("X must be a matrix")
+      size <- dispersion
     }
+    
+    for (i in 1:n) {
+      # Linear predictor on log scale
+      mu_alt <- exp(theta_alt * X[i, 2])
+      mu_null <- exp(theta_null * X[i, 2])
+      
+      # Log-likelihood ratio using dnbinom
+      # dnbinom uses prob = size/(size + mu) parameterization
+      ll_alt <- dnbinom(y[i], size = size, mu = mu_alt, log = TRUE)
+      ll_null <- dnbinom(y[i], size = size, mu = mu_null, log = TRUE)
+      
+      evalues[i] <- exp(ll_alt - ll_null)
+    }
+    
   } else {
-    stop("Currently only Gaussian family is supported")
+    # Unsupported family - provide guidance
+    stop(paste0(
+      "Family '", family_name, "' is not yet supported.\n",
+      "Supported families: gaussian, poisson, binomial, Gamma, negative.binomial\n",
+      "TODO: Implement additional families as needed.\n",
+      "For custom implementations, see:\n",
+      "  - Turner, Ly, & Grünwald (2020+) for general e-value construction\n",
+      "  - Grünwald et al. (2019) for safe testing framework\n",
+      "  - Exponential family theory: Brown (1986), Statistical Sci."
+    ))
   }
   
   return(evalues)

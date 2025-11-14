@@ -12,7 +12,12 @@ SafeBRMS is an R package that implements safe Bayesian regression model selectio
 
 - **Fit Bayesian regression models** using brms with safe testing in mind
 - **Compute e-values** for hypothesis testing with type-I error guarantees
-- **Per-observation GLM e-variables** based on likelihood ratios for exponential families
+- **Per-observation GLM e-variables** for multiple distribution families:
+  - Gaussian (continuous data)
+  - Poisson (count data)
+  - Negative Binomial (overdispersed counts)
+  - Binomial (binary/proportion data)
+  - Gamma (positive continuous data)
 - **Mixing to ensure E ≤ 1** under the null hypothesis
 - **E-posteriors** over parameter grids for robust inference
 - **Single and multiple coefficient tests** with proper error control

@@ -62,7 +62,55 @@ plot(epost$theta, epost$eposterior, type = "l",
 abline(v = epost$MAP_theta, col = "red", lty = 2)
 ```
 
-## Example 4: Direct E-Value Computation
+## Example 4: GLM E-Values for Different Data Types
+
+```r
+# Prepare design matrix
+X <- model.matrix(~ x1, data = example_data)
+
+# Count data - Poisson distribution
+y_count <- rpois(100, lambda = exp(0.5 * example_data$x1))
+e_pois <- glm_lr_evalues(
+  y = y_count,
+  X = X,
+  theta_null = 0,
+  theta_alt = 0.5,
+  family = poisson()
+)
+
+# Overdispersed count data - Negative Binomial
+y_overdispersed <- rnbinom(100, size = 2, mu = exp(0.5 * example_data$x1))
+e_nb <- glm_lr_evalues(
+  y = y_overdispersed,
+  X = X,
+  theta_null = 0,
+  theta_alt = 0.5,
+  family = "negative.binomial",
+  dispersion = 2  # can be omitted to auto-estimate
+)
+
+# Binary data - Binomial distribution
+y_binary <- rbinom(100, size = 1, prob = plogis(0.5 * example_data$x1))
+e_binom <- glm_lr_evalues(
+  y = y_binary,
+  X = X,
+  theta_null = 0,
+  theta_alt = 0.5,
+  family = binomial()
+)
+
+# Positive continuous data - Gamma distribution
+y_positive <- rgamma(100, shape = 2, rate = 2 / exp(0.5 * example_data$x1))
+e_gamma <- glm_lr_evalues(
+  y = y_positive,
+  X = X,
+  theta_null = 0,
+  theta_alt = 0.5,
+  family = Gamma()
+)
+```
+
+## Example 5: Direct E-Value Computation (Gaussian)
 
 ```r
 # Prepare data
@@ -83,7 +131,7 @@ summary(evalues)
 hist(evalues, main = "Distribution of E-Values")
 ```
 
-## Example 5: Mixing E-Values
+## Example 6: Mixing E-Values
 
 ```r
 # Apply mixing to ensure calibration
@@ -95,7 +143,7 @@ hist(evalues, main = "Original E-Values")
 hist(mixed, main = "Mixed E-Values")
 ```
 
-## Example 6: Simulation Study
+## Example 7: Simulation Study
 
 ```r
 # Simulate data under null
@@ -137,6 +185,35 @@ for (i in 1:100) {
 }
 ```
 
+## Example 8: Handling Overdispersion in Count Data
+
+```r
+# Generate overdispersed count data
+set.seed(123)
+n <- 100
+x <- rnorm(n)
+X <- cbind(1, x)
+
+# True negative binomial process
+y_count <- rnbinom(n, size = 1.5, mu = exp(0.5 * x))
+
+# Check for overdispersion
+var_mean_ratio <- var(y_count) / mean(y_count)
+cat("Variance/Mean ratio:", var_mean_ratio, "\n")
+
+if (var_mean_ratio > 2) {
+  cat("Overdispersion detected - using Negative Binomial\n")
+  e_values <- glm_lr_evalues(y_count, X, theta_null = 0, theta_alt = 0.5,
+                             family = "negative.binomial")
+} else {
+  cat("No overdispersion - using Poisson\n")
+  e_values <- glm_lr_evalues(y_count, X, theta_null = 0, theta_alt = 0.5,
+                             family = poisson())
+}
+
+summary(e_values)
+```
+
 ## Interpretation Guide
 
 ### E-Values
@@ -144,6 +221,13 @@ for (i in 1:100) {
 - **E-value > 1**: Evidence against null
 - **E-value > 1/α**: Reject null at level α
 - **E-value > 20**: Reject at α = 0.05
+
+### Distribution Family Selection
+- **Gaussian**: Continuous data (any range)
+- **Poisson**: Count data where variance ≈ mean
+- **Negative Binomial**: Count data with variance > mean (overdispersion)
+- **Binomial**: Binary outcomes (0/1) or proportions
+- **Gamma**: Positive continuous data (skewed distributions)
 
 ### E-Posterior
 - Distribution over parameter values

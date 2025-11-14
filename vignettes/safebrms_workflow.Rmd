@@ -130,7 +130,61 @@ The e-posterior provides a safe alternative to traditional Bayesian posteriors t
 
 ## Advanced Usage
 
-### GLM Likelihood Ratio E-Values
+### GLM Likelihood Ratio E-Values for Multiple Families
+
+The `glm_lr_evalues()` function supports multiple distribution families for different types of data:
+
+```{r glm-families, eval=FALSE}
+# Count data - Poisson distribution
+y_count <- rpois(100, lambda = exp(0.5 * x))
+X <- model.matrix(~ x, data = data.frame(x = rnorm(100)))
+e_pois <- glm_lr_evalues(y_count, X, theta_null = 0, theta_alt = 0.5,
+                         family = poisson())
+
+# Overdispersed count data - Negative Binomial
+y_overdispersed <- rnbinom(100, size = 2, mu = exp(0.5 * x))
+e_nb <- glm_lr_evalues(y_overdispersed, X, theta_null = 0, theta_alt = 0.5,
+                       family = "negative.binomial", dispersion = 2)
+
+# Binary data - Binomial distribution
+y_binary <- rbinom(100, size = 1, prob = plogis(0.5 * x))
+e_binom <- glm_lr_evalues(y_binary, X, theta_null = 0, theta_alt = 0.5,
+                          family = binomial())
+
+# Positive continuous data - Gamma distribution
+y_positive <- rgamma(100, shape = 2, rate = 2 / exp(0.5 * x))
+e_gamma <- glm_lr_evalues(y_positive, X, theta_null = 0, theta_alt = 0.5,
+                          family = Gamma())
+```
+
+**Supported Families:**
+
+- **Gaussian**: Continuous data (default)
+- **Poisson**: Count data where mean ≈ variance
+- **Negative Binomial**: Overdispersed count data (variance > mean)
+- **Binomial**: Binary or proportion data
+- **Gamma**: Positive continuous data
+
+**Handling Overdispersion:**
+
+For count data, check the variance-to-mean ratio. If it's substantially greater than 1, use negative binomial instead of Poisson:
+
+```{r overdispersion, eval=FALSE}
+# Check for overdispersion
+var_mean_ratio <- var(y_count) / mean(y_count)
+
+if (var_mean_ratio > 2) {
+  # Use negative binomial
+  e_values <- glm_lr_evalues(y_count, X, theta_null = 0, theta_alt = 0.5,
+                             family = "negative.binomial")
+} else {
+  # Use Poisson
+  e_values <- glm_lr_evalues(y_count, X, theta_null = 0, theta_alt = 0.5,
+                             family = poisson())
+}
+```
+
+### GLM Likelihood Ratio E-Values (Gaussian)
 
 Compute per-observation e-values directly:
 
