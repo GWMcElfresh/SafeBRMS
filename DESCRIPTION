@@ -1,0 +1,27 @@
+Package: SafeBRMS
+Type: Package
+Title: Safe Bayesian Regression Model Selection with E-Values
+Version: 0.1.0
+Authors@R: person("SafeBRMS", "Contributors", email = "safebrms@example.com", role = c("aut", "cre"))
+Description: Implements safe Bayesian regression model selection using brms models 
+    with Turner/Ly/Grunwald e-variable constructions. Provides per-observation 
+    exponential-family GLM likelihood ratio based e-variables with mixing to ensure 
+    E <= 1 under the null hypothesis. Computes coefficient e-values and e-posteriors 
+    over theta grids. Includes support for multiple testing correction using 
+    Benjamini-Hochberg procedure.
+License: GPL (>= 3)
+Encoding: UTF-8
+LazyData: true
+Depends:
+    R (>= 3.5.0)
+Imports:
+    brms (>= 2.13.0),
+    stats,
+    methods,
+    utils
+Suggests:
+    testthat (>= 3.0.0),
+    knitr,
+    rmarkdown
+VignetteBuilder: knitr
+RoxygenNote: 7.2.3
